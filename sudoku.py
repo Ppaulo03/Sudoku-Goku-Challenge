@@ -23,7 +23,7 @@ def show_matriz(matriz):
             cont_row -= 1
 
 
-def transformar_em_listas(matriz):
+def transformar_em_listas(matriz):  # transform 0 em [0]
 
     new_matriz = [
         [[col] if type(col) is not list else col for col in lin]
@@ -32,7 +32,17 @@ def transformar_em_listas(matriz):
     return new_matriz
 
 
-def transformar_em_numero(matriz):
+def fill_gaps(matriz):  # transform [] em [0] e ['1'] em [1]
+    for idx_lin, lin in enumerate(matriz):
+        for idx_col, iten in enumerate(lin):
+            if iten == [] or iten == ['']:
+                matriz[idx_lin][idx_col] = [0]
+            else:
+                matriz[idx_lin][idx_col] = [int(iten[0])]
+    return matriz
+
+
+def transformar_em_numero(matriz):  # transform [0] em 0
 
     new_matriz = [
         [int(str(col)[1:-1]) if type(col) is list else col for col in lin]
@@ -83,6 +93,54 @@ def juntar_quadrantes(matriz):
     return fusao
 
 
+def conferir_conflitos(matriz):
+    flag = True
+    erros = set()
+
+    for idx_lin, linha in enumerate(matriz):
+        for idx_col, item in enumerate(linha):
+            if 0 not in item and len(item) == 1:
+
+                linhas = matriz
+                colunas = transposta(matriz)
+                quadrantes = separar_quadrantes(matriz)
+                quad_col = int(idx_col/3)
+                quad_lin = (int(idx_lin/3)*3)
+                pos_quad = quad_lin + quad_col
+
+                if linhas[idx_lin].count(item) > 1:
+                    id_col = None
+                    for colx, num in enumerate(linhas[idx_lin]):
+                        if num == item:
+                            erros.add((idx_lin, colx))
+                            flag = False
+
+                if colunas[idx_col].count(item) > 1:
+                    for linx, num in enumerate(colunas[idx_col]):
+                        if num == item:
+                            erros.add((linx, idx_col))
+                            flag = False
+
+                cont = 0
+                for lins in quadrantes[pos_quad]:
+                    cont += lins.count(item)
+                if cont > 1:
+
+                    for linx, lins in enumerate(quadrantes[pos_quad]):
+                        for colx, num in enumerate(lins):
+
+                            if num == item:
+                                id_lin = linx + quad_lin
+                                id_col = colx + (quad_col*3)
+                                erros.add((id_lin, id_col))
+                                flag = False
+
+    if not flag:
+        return False, erros
+    else:
+        return True, erros
+
+
 def determinar_possibilidades(sudoku, pos_lin, pos_col):
 
     if 0 in sudoku[pos_lin][pos_col]:
@@ -113,6 +171,7 @@ def determinar_possibilidades(sudoku, pos_lin, pos_col):
 
 
 def marcar_possibilidades(sudoku):
+
     finished = False
     old_matriz = sudoku
 
@@ -123,16 +182,21 @@ def marcar_possibilidades(sudoku):
         for idx_lin, linha in enumerate(old_matriz):
             for idx_col, item in enumerate(linha):
 
-                solucoes = determinar_possibilidades(
-                    old_matriz, idx_lin, idx_col)
+                if finished:
+                    solucoes = determinar_possibilidades(
+                        old_matriz, idx_lin, idx_col)
 
-                if solucoes != item:
-                    finished = False
-                new_line.append(solucoes)
+                    if solucoes != item:
+                        finished = False
+
+                    new_line.append(solucoes)
+                else:
+                    new_line.append(item)
 
             new_matriz.append(new_line)
             new_line = []
         old_matriz = new_matriz[:]
+
     return new_matriz
 
 
@@ -216,79 +280,125 @@ def check_routine(sudoku):
     return new_matriz
 
 
-def tentativa_erro(sudoku):
+def doble_check(sudoku):
+    if sudoku == []:
+        return False
+    for idx_lin in range(len(sudoku)):
+        for idx_col in range(len(sudoku[idx_lin])):
+            if len(sudoku[idx_lin][idx_col]) > 2:
+                return True
+    return False
 
+
+def tentativa_erro(sudoku):
+    mutiplos = False
     sudoku = check_routine(sudoku)
     if sudoku == []:
-        return []
+        return [], mutiplos
 
-    new_matriz = []
+    new_matriz = list()
+    solucao = list()
+
     for idx_lin in range(len(sudoku)):
         for idx_col in range(len(sudoku[idx_lin])):
 
             if len(sudoku[idx_lin][idx_col]) == 2:
+
                 new_matriz = deepcopy(sudoku)
                 sudoku[idx_lin][idx_col].remove(sudoku[idx_lin][idx_col][0])
-                sudoku = tentativa_erro(sudoku)
+                sudoku, mutiplos = tentativa_erro(sudoku)
 
-                if sudoku == []:
+                if mutiplos:
+                    return sudoku, mutiplos
 
-                    sudoku = deepcopy(new_matriz)
+                elif sudoku != []:
+                    solucao = deepcopy(sudoku)
 
-                    sudoku[idx_lin][idx_col].remove(
-                        sudoku[idx_lin][idx_col][1])
+                sudoku = deepcopy(new_matriz)
+                sudoku[idx_lin][idx_col].remove(sudoku[idx_lin][idx_col][1])
+                sudoku, mutiplos = tentativa_erro(sudoku)
 
-                    sudoku = tentativa_erro(sudoku)
+                if mutiplos:
+                    return sudoku, mutiplos
 
-                    if sudoku == []:
-                        return []
+                if sudoku != []:
+                    if solucao == []:
+                        solucao = deepcopy(sudoku)
+                    else:
+                        mutiplos = True
 
-    return sudoku
+                return solucao, mutiplos
+
+    return sudoku, mutiplos
 
 
-# example = [
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+def solve_sudoku(sudoku):
+    '''
+    Solve sudoku games and return a list with a value and a solution.
+    The whitespaces of the sudoku shold be zeros or empty lists
+     example = [
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
 
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
 
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0],
-#     [0, 0, 0,  0, 0, 0,  0, 0, 0]
-# ]
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+     [0, 0, 0,  0, 0, 0,  0, 0, 0],
+     [0, 0, 0,  0, 0, 0,  0, 0, 0]
+ ]
+
+    If there is only 1 solution: returns 0 and the solution;
+
+    If there is more than one solution: returns 1 and a solution;
+
+    If the sudoku is not resolvable: returns 2 and an empty list;
+
+    If there is little information: returns 3 and an empty list;
+
+    If is there a conflict of values: returns 4 and a lis of coordinates of
+    the problem
+    '''
+
+    sudoku_lista = transformar_em_listas(sudoku)
+    sudoku_lista = fill_gaps(sudoku_lista)
+    no_conflito, loc = conferir_conflitos(sudoku_lista)
+    if no_conflito:
+        solucao, mutiplos = tentativa_erro(sudoku_lista)
+
+        if mutiplos:
+            solucao = transformar_em_numero(solucao)
+            return 1, solucao
+        elif doble_check(solucao):
+            return 3, []
+
+        elif solucao == []:
+            return 2, []
+
+        else:
+            solucao = transformar_em_numero(solucao)
+            return 0, solucao
+    else:
+        return 4, loc
 
 
 example = [
-    [5, 0, 0,  0, 0, 0,  2, 3, 0],
-    [0, 0, 0,  0, 4, 8,  9, 7, 0],
-    [0, 8, 0,  0, 0, 3,  0, 0, 0],
+    [6, 0, 2,  5, 0, 4,  0, 0, 0],
+    [0, 0, 0,  0, 0, 0,  0, 0, 0],
+    [0, 0, 0,  4, 4, 9,  0, 0, 0],
 
-    [1, 0, 0,  3, 0, 9,  7, 4, 0],
-    [0, 0, 0,  0, 0, 6,  0, 0, 0],
-    [8, 9, 0,  0, 0, 0,  0, 0, 0],
+    [0, 1, 0,  0, 4, 0,  0, 0, 0],
+    [3, 0, 0,  0, 8, 5,  4, 0, 0],
+    [9, 0, 0,  0, 0, 0,  5, 6, 0],
 
-    [0, 4, 0,  0, 0, 0,  0, 6, 0],
-    [6, 2, 0,  8, 3, 0,  0, 0, 1],
-    [0, 5, 1,  0, 6, 0,  0, 2, 0]
+    [0, 0, 0,  2, 0, 0,  0, 0, 0],
+    [2, 0, 2,  7, 4, 3,  0, 9, 4],
+    [0, 5, 0,  0, 0, 0,  8, 3, 0]
 ]
 
-# [5] [1] [4]    [6] [9] [7]    [2] [3] [8]
-# [2] [3] [6]    [1] [4] [8]    [9] [7] [5]
-# [7] [8] [9]    [5] [2] [3]    [6] [1] [4]
-
-# [1] [6] [5]    [3] [8] [9]    [7] [4] [2]
-# [4] [7] [3]    [2] [5] [6]    [1] [8] [9]
-# [8] [9] [2]    [4] [7] [1]    [3] [5] [6]
-
-# [3] [4] [8]    [9] [1] [2]    [5] [6] [7]
-# [6] [2] [7]    [8] [3] [5]    [4] [9] [1]
-# [9] [5] [1]    [7] [6] [4]    [8] [2] [3]
-
-
-example = transformar_em_listas(example)
-example = tentativa_erro(example)
-# example = transformar_em_numero(example)
-show_matriz(example)
+if __name__ == '__main__':
+    num, sol = solve_sudoku(example)
+    print(len(sol))
+    print(sol)
